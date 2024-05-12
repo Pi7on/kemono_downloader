@@ -1,4 +1,4 @@
-# kcdl
+# kdl
 
 A kemono.su attachment downloader
 
@@ -12,9 +12,8 @@ A kemono.su attachment downloader
 Clone the repo and install the dependencies:
 
 ```powershell
-git clone <link>
-cd here
-pip install -r requirements.txt
+git clone https://github.com/Pi7on/kemono_downloader.git
+cd kemono_downloader
 ```
 
 Run the script:
