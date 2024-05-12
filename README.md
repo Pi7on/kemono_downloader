@@ -32,7 +32,7 @@ https://c5.kemono.su/data/aa/bb/attachment.ext
     out=filename.ext
 ```
 
-Call aria2c with the generated downlaod list as input:
+Call aria2c with the generated download list as input:
 
 ```powershell
 aria2c -i file.txt -j 2 
