@@ -15,8 +15,6 @@ def get_creator_post_count(service, creator_id) -> int:
     if res.status_code == 200:
         tree = html.fromstring(res.content)
         xpath_expr = "/html/body/div[2]/main/section/div[1]/small"
-        
-        # Use XPath to find matching elements
         matches = tree.xpath(xpath_expr)
         for m in matches:
             text:str = m.text_content()
@@ -24,10 +22,10 @@ def get_creator_post_count(service, creator_id) -> int:
                 text = text.split("of")[1].strip()
                 return int(text)
             else:
-                print(f'ERROR: Could not get post count for creator: {creator_id} at service {service}')
+                print(f'ERROR: Could not find post count for creator: {creator_id} at service {service} in page {url}')
                 exit(1)
     else :
-        print(f'ERROR: Could not get post count for creator: {creator_id} at service {service}')
+        print(f'ERROR: Could not GET page: {url}')
         exit(1)
                 
 def get_posts(service, creator_id) -> list:
@@ -70,9 +68,7 @@ if __name__ == "__main__":
                     if str(att["path"]).endswith("." + format):
                         att_url = ATTACHMENT_DATA_PREFIX + att["path"]
                         att_filename = publish.strftime("%Y_%m_%d_%H_%M_%S") + "-" + att_url.split("data/")[1].replace("/", "_")
-                    
-                        
-                        out_dir = args.outpath + "/" + format.upper() # aria2 expects unix-link file paths
+                        out_dir = args.outpath + "/" + format.upper() # aria2 expects unix-like file paths
                         if not os.path.exists(out_dir + "/" + att_filename):
                             aria_entry = f'{att_url}\n\tdir={out_dir}\n\tout={att_filename}\n'
                             file.write(aria_entry)
