@@ -7,6 +7,7 @@ from lxml import html
 from time import sleep
 import unicodedata
 import re
+import json
 
 URL_WEB = "https://kemono.su/"
 URL_API = URL_WEB + "api/v1/"
@@ -86,15 +87,22 @@ def get_posts(service, creator_id) -> list:
                 sleep(REQUEST_DELAY_SECS)
     return sorted(posts, key=lambda x: x["published"], reverse=False)
 
+def json_dump(data, filepath):
+    with open(filepath, 'w') as f:
+        json.dump(data, f)
+
 if __name__ == "__main__":
+    # Create ArgumentParser object
     parser = argparse.ArgumentParser(description="kemono.su dowloader")
 
+    # Add arguments
     parser.add_argument('--file-format','-f', default="png", dest="formats", nargs='+', required=True, help="Space-separated list of file extensions to be dowloaded.")
     parser.add_argument('--out-path','-o', default="./kemono_dump", dest="outpath" ,type=str, help="Path where aria2 will download the files.")
     parser.add_argument('--creator-id','-cid', default="", dest="creator_id" ,type=int, required=True, help="https://kemono.su/patreon/user/12345678 <-- this number")
     parser.add_argument('--service','-srv', default="", dest="service" ,type=str, required=True, help="The service the content comes from. E.g. patreon, gumroad, etc.")
     parser.add_argument('--use-original-attachment-filename','-uoaf', action=argparse.BooleanOptionalAction, default="", dest="use_original_att_fname" ,type=bool, required=False, help="TODO")
     
+    # Parse arguments
     args = parser.parse_args()
     
     # Convert to Unix path for aria2
@@ -104,12 +112,16 @@ if __name__ == "__main__":
     creator_name = get_creator_name(args.service, args.creator_id)
         
     posts = get_posts(args.service, args.creator_id)
+    json_dump(posts, "./dump.json")
+    # exit()
+    
     for format in args.formats:
-        with open(f'aria_{args.service}_{creator_name}_{format}.txt', 'w') as file:
+        with open(f'aria_{args.service}_{creator_name}_{format}.txt', 'w') as aria_file:
             for post in posts:
                 publish = datetime.fromisoformat(post["published"])
                 for att in post["attachments"]:
                     if str(att["path"]).endswith("." + format):
+                        
                         att_name = att["name"]
                         att_path = ATTACHMENT_DATA_PREFIX + att["path"]
                         
@@ -121,8 +133,22 @@ if __name__ == "__main__":
                     
                         out_dir = args.outpath + "/" + format.upper() # aria2 expects unix-link file paths
                         
-                        if not os.path.exists(out_dir + "/" + final_filename):
-                            aria_entry = f'{att_path}\n\tdir={out_dir}\n\tout={final_filename}\n'
-                            file.write(aria_entry)
+                        aria_entry = f'{att_path}\n\tdir={out_dir}\n\tout={final_filename}\n'
+                        aria_file.write(aria_entry)
+                        
+                # Some posts only have one file, and it's inside this object, not an attachment
+                if post["file"]:
+                    if str(post["file"]["path"]).endswith("." + format):
+                        f_name = post["file"]["name"]
+                        f_path = ATTACHMENT_DATA_PREFIX + post["file"]["path"]
+                        
+                        if args.use_original_att_fname:
+                            att_path += f'?f={f_name}' # Unnecessary? idk
+                            final_filename = f_name
                         else:
-                            print(args.outpath + final_filename + " already downloaded")
+                            final_filename = publish.strftime("%Y_%m_%d_%H_%M_%S") + "-" + f_path.split("data/")[1].replace("/", "_")
+                    
+                        out_dir = args.outpath + "/" + format.upper() # aria2 expects unix-link file paths
+                        
+                        aria_entry = f'{f_path}\n\tdir={out_dir}\n\tout={final_filename}\n'
+                        aria_file.write(aria_entry)
