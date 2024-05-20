@@ -19,7 +19,7 @@ cd kemono_downloader
 Run the script:
 
 ```powershell
-python .\kdl.py --platform <platform> --creatorid <id> --format <format> --outpath <path>
+python .\kdl.py --input <url>  --format <format1, format2, ... > --out-path <path>
 ```
 
 Executing the script will generate an input file for [aria2](https://aria2.github.io/) containing a list of files to downlaod, with an associated filename and output directory.
@@ -35,5 +35,5 @@ https://c5.kemono.su/data/aa/bb/attachment.ext
 Call aria2c with the generated download list as input:
 
 ```powershell
-aria2c -i file.txt -j 2 
+aria2c -i aria_service_creatorname_EXT.txt -j 2 
 ```
