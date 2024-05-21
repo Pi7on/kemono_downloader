@@ -8,10 +8,11 @@ import time
 import unicodedata
 import re
 import json
-from collections import defaultdict
-
+import logging
 
 # TODO: Searching by tag works: https://kemono.su/api/v1/posts?o=700&tag=high+resolution
+# TODO: We grab some files as .bin, when their extension is actually specified in the file["name"] or attachment["name"]. This causes us to skip, for example, valid psd files because thir url looks like this: ".....bf893f.bin?f=PSD.psd"
+
 
 URL_WEB = "https://kemono.su/"
 URL_API = URL_WEB + "api/v1/"
@@ -19,6 +20,14 @@ ATTACHMENT_DATA_PREFIX = "https://c5.kemono.su/data"
 REQUEST_DELAY_SECS = 1  # When a creator has lots of pages, requesting them too fast gets us rate limited. Let's be kind to the Kemono bros
 POSTS_PER_PAGE = 50
 PAGES_TO_DL_DEFAULT = 1 * POSTS_PER_PAGE
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+
+log = logging.getLogger(__name__)
 
 
 def slugify(value, allow_unicode: bool, blank_substitute: str):
@@ -42,10 +51,10 @@ def get_creator_name(service, creator_id) -> str:
     xpath_expr = "/html/body/div[2]/main/section/header/div[2]/h1/a/span[2]"
     res = r.get(url)
     if res.status_code != 200:
-        print(
-            f"WARN: Could not get creator name for id: {creator_id} at service {service}"
+        log.warning(
+            f"Could not get creator name for id: {creator_id} at service {service}"
         )
-        print(f"WARN: Using id: {creator_id} as default value")
+        log.warning(f"WARN: Using id: {creator_id} as default value")
         return str(creator_id)
 
     tree = html.fromstring(res.content)
@@ -53,8 +62,8 @@ def get_creator_name(service, creator_id) -> str:
     if matches:
         return slugify(matches[0].text_content(), True, str(creator_id))
 
-    print(f"WARN: Could not get creator name for id: {creator_id} at service {service}")
-    print(f"WARN: Using id: {creator_id} as default value")
+    log.warning(f"Could not get creator name for id: {creator_id} at service {service}")
+    log.warning(f"Using id: {creator_id} as default value")
     return str(creator_id)
 
 
@@ -64,8 +73,9 @@ def get_creator_post_count(service, creator_id) -> int:
     res = r.get(url)
 
     if res.status_code != 200:
-        print(
-            f"ERROR: Could not get post count for creator: {creator_id} at service {service}"
+        log.error(f"Received status code: {res.status_code}")
+        log.error(
+            f"Could not get post count for creator: {creator_id} at service {service}"
         )
         exit(1)
 
@@ -77,8 +87,15 @@ def get_creator_post_count(service, creator_id) -> int:
             text = text.split("of")[1].strip()
             return int(text)
 
-    print(
-        f"ERROR: Could not get post count for creator: {creator_id} at service {service}"
+    # check if creator only has one page of posts (less than 50 posts total)
+    card_list_container_xpath: str = "/html/body/div[2]/main/section/div[3]/div[2]"
+    post_list_container = tree.xpath(card_list_container_xpath)
+    if post_list_container:
+        log.info(f"Creator {creator_id} only has one page of posts")
+        return len(post_list_container[0].getchildren())
+
+    log.error(
+        f"Could not find post count in html page for creator: {creator_id} at service {service}"
     )
     exit(1)
 
@@ -92,11 +109,11 @@ def get_posts(url, from_offset, to_offset=PAGES_TO_DL_DEFAULT) -> list:
             url = f"{URL_API}{service}/user/{creator_id}?o={offset}"
             res = r.get(url)
             if res.status_code == 200:
-                print("GET: " + url)
+                log.info("Getting:" + url)
                 posts.extend(res.json())
             else:
-                print(
-                    f"ERROR: Failed to retrieve page at offset {offset} - Status code: {res.status_code}"
+                log.error(
+                    f"Failed to retrieve page at offset {offset} - Status code: {res.status_code}"
                 )
             if post_count > (5 * POSTS_PER_PAGE):
                 time.sleep(REQUEST_DELAY_SECS)
@@ -129,6 +146,8 @@ def remove_duplicates_by_url(candidates):
         if c.url not in seen:
             seen.add(c.url)
             uniques.append(c)
+        else:
+            log.info(f"Removing duplicate: {c.url}")
     return uniques
 
 
@@ -146,11 +165,13 @@ def parse_web_url(url):
             page_offset = 0
 
         if page_offset % 50 != 0:
+            log.warning(f"Page offset: {page_offset} not a multiple of 50")
             page_offset = (page_offset // 50) * 50
+            log.warning(f"Page offset coerced to: {page_offset}")
 
         return service, creator_id, int(page_offset)
     else:
-        print(f"ERORR: could not parse input url: {url}")
+        log.error(f"could not parse input url: {url}")
         return None, None, None
 
 
@@ -175,8 +196,18 @@ if __name__ == "__main__":
         default="png",
         dest="formats",
         nargs="+",
-        required=True,
+        required=False,
         help="Space-separated list of file extensions to be dowloaded.",
+    )
+    parser.add_argument(
+        "--list-formats",
+        "-F",
+        action=argparse.BooleanOptionalAction,
+        default="",
+        dest="available_formats",
+        type=list[str],
+        required=False,
+        help="List all available file formats from the provided account. Does not download anything.",
     )
     parser.add_argument(
         "--out-path",
@@ -207,12 +238,22 @@ if __name__ == "__main__":
     service, creator_id, page_offset = parse_web_url(args.input_url)
     creator_name = get_creator_name(service, creator_id)
     creator_post_count = get_creator_post_count(service, creator_id)
-    print(f"[INFO]: Service: {service}")
-    print(f"[INFO]: Creator ID: {creator_id}")
-    print(f"[INFO]: Creator Name: {creator_name}")
-    print(f"[INFO]: Creator Post count: {creator_post_count}")
+    log.info(f"Service: {service}")
+    log.info(f"Creator ID: {creator_id}")
+    log.info(f"Creator Name: {creator_name}")
+    log.info(f"Creator Post count: {creator_post_count}")
 
     creator_posts = get_posts(args.input_url, 0, creator_post_count)
+
+    if args.available_formats:
+        seen_formats = set()
+        for post in creator_posts:
+            if post["file"]:
+                seen_formats.add(str(post["file"]["path"]).split(".")[1].lower())
+            for att in post["attachments"]:
+                seen_formats.add(str(att["path"]).split(".")[1].lower())
+        log.info(f"Found formats: {seen_formats}")
+        exit(0)
 
     candidates = []
 
@@ -232,12 +273,18 @@ if __name__ == "__main__":
 
     candidates = remove_duplicates_by_url(candidates)
 
-    with open(f"aria_{service}_{creator_name}_{format.upper()}.txt", "w") as aria_file:
+    aria_file_name: str = f"aria_{service}_{creator_name}_{format.upper()}.txt"
+    aria_entries_count: int = 0
+    with open(aria_file_name, "w") as aria_file:
         for c in candidates:
             if c.url.endswith(format):
                 file_url = ATTACHMENT_DATA_PREFIX + c.url
-                # out_dir = f"{args.outpath}\{creator_name}\\{format.upper()}"
-                out_dir = join(args.outpath, creator_name, format.upper())
+                out_dir = join(
+                    args.outpath,
+                    # creator_name.lower() + "_" + str(creator_id),
+                    creator_name.lower(),
+                    format.upper(),
+                )
                 final_filename = (
                     c.publishdt.strftime("%Y_%m_%d_%H_%M_%S")
                     + "-"
@@ -246,3 +293,7 @@ if __name__ == "__main__":
                 aria_entry = f"{file_url}\n\tdir={out_dir}\n\tout={final_filename}\n"
                 # print(aria_entry)
                 aria_file.write(aria_entry)
+                aria_entries_count += 1
+    log.info(
+        f"Succesfully wrote {aria_entries_count} entries to file: {aria_file_name}"
+    )
