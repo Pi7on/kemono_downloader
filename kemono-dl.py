@@ -109,7 +109,7 @@ def get_posts(url, from_offset, to_offset=PAGES_TO_DL_DEFAULT) -> list:
             url = f"{URL_API}{service}/user/{creator_id}?o={offset}"
             res = r.get(url)
             if res.status_code == 200:
-                log.info("Getting:" + url)
+                log.info("Getting: " + url)
                 posts.extend(res.json())
             else:
                 log.error(
@@ -126,9 +126,10 @@ def json_dump(data, filepath):
 
 
 class Candidate:
-    def __init__(self, publishdt: str, url: str):
+    def __init__(self, publishdt: str, url: str, name: str):
         self.publishdt = publishdt
         self.url = url
+        self.name = name
 
     def __str__(self):
         return f"{self.publishdt} | {self.url}"
@@ -259,15 +260,24 @@ if __name__ == "__main__":
 
     for format in args.formats:
         for post in creator_posts:
-            if post["file"] and str(post["file"]["path"]).endswith("." + format):
+            if post["file"] and (
+                str(post["file"]["path"]).endswith("." + format)
+                or str(post["file"]["name"]).endswith("." + format)
+            ):
                 cand = Candidate(
-                    datetime.fromisoformat(post["published"]), post["file"]["path"]
+                    datetime.fromisoformat(post["published"]),
+                    post["file"]["path"],
+                    post["file"]["name"],
                 )
                 candidates.append(cand)
             for att in post["attachments"]:
-                if str(att["path"]).endswith("." + format):
+                if str(att["path"]).endswith("." + format) or str(att["name"]).endswith(
+                    "." + format
+                ):
                     cand = Candidate(
-                        datetime.fromisoformat(post["published"]), att["path"]
+                        datetime.fromisoformat(post["published"]),
+                        att["path"],
+                        att["name"],
                     )
                     candidates.append(cand)
 
@@ -277,23 +287,37 @@ if __name__ == "__main__":
     aria_entries_count: int = 0
     with open(aria_file_name, "w") as aria_file:
         for c in candidates:
-            if c.url.endswith(format):
-                file_url = ATTACHMENT_DATA_PREFIX + c.url
-                out_dir = join(
-                    args.outpath,
-                    # creator_name.lower() + "_" + str(creator_id),
-                    creator_name.lower(),
-                    format.upper(),
-                )
-                final_filename = (
-                    c.publishdt.strftime("%Y_%m_%d_%H_%M_%S")
-                    + "-"
-                    + c.url.replace("/", "_").removeprefix("_")
-                )
-                aria_entry = f"{file_url}\n\tdir={out_dir}\n\tout={final_filename}\n"
-                # print(aria_entry)
-                aria_file.write(aria_entry)
-                aria_entries_count += 1
+            extension_mismatch = False
+            if c.url.split(".")[1] != c.name.split(".")[1]:
+                log.warning(f"EXTENSION MISMATCH: url: {c.url} | name: {c.name}")
+                extension_mismatch = True
+                # pass
+
+            file_url = ATTACHMENT_DATA_PREFIX + c.url + "?f=" + c.name
+            file_name_extension = c.name.split(".")[1]
+            file_url_extension = c.url.split(".")[1]
+            out_dir = join(
+                args.outpath,
+                # creator_name.lower() + "_" + str(creator_id),
+                creator_name.lower(),
+                format.upper(),
+            )
+
+            filename: str = (
+                c.publishdt.strftime("%Y_%m_%d_%H_%M_%S")
+                + "-"
+                + c.url.replace("/", "_").removeprefix("_")
+            )  # build final filename
+
+            if extension_mismatch:
+                filename = (
+                    filename.split(".")[0] + "." + file_name_extension
+                )  # if url and filename have different extensions, prefer extension of the filename (presumably given by original creator)
+
+            aria_entry = f"{file_url}\n\tdir={out_dir}\n\tout={filename}\n"
+            # print(aria_entry)
+            aria_file.write(aria_entry)
+            aria_entries_count += 1
     log.info(
         f"Succesfully wrote {aria_entries_count} entries to file: {aria_file_name}"
     )
