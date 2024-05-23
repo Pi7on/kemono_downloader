@@ -9,6 +9,7 @@ import unicodedata
 import re
 import json
 import logging
+import os
 
 # TODO: Searching by tag works: https://kemono.su/api/v1/posts?o=700&tag=high+resolution
 # TODO: We grab some files as .bin, when their extension is actually specified in the file["name"] or attachment["name"]. This causes us to skip, for example, valid psd files because thir url looks like this: ".....bf893f.bin?f=PSD.psd"
@@ -228,6 +229,16 @@ if __name__ == "__main__":
         required=False,
         help="TODO",
     )
+    parser.add_argument(
+        "--skip-owned",
+        "-so",
+        action=argparse.BooleanOptionalAction,
+        default="",
+        dest="skip_owned",
+        type=bool,
+        required=False,
+        help="Do not add files which are already found in the provided output path (--out-path) to the aria file",
+    )
 
     # Parse arguments
     args = parser.parse_args()
@@ -288,7 +299,7 @@ if __name__ == "__main__":
     with open(aria_file_name, "w") as aria_file:
         for c in candidates:
             extension_mismatch = False
-            if c.url.split(".")[1] != c.name.split(".")[1]:
+            if c.url.split(".")[-1] != c.name.split(".")[-1]:
                 log.warning(f"EXTENSION MISMATCH: url: {c.url} | name: {c.name}")
                 extension_mismatch = True
                 # pass
@@ -314,10 +325,15 @@ if __name__ == "__main__":
                     filename.split(".")[0] + "." + file_name_extension
                 )  # if url and filename have different extensions, prefer extension of the filename (presumably given by original creator)
 
-            aria_entry = f"{file_url}\n\tdir={out_dir}\n\tout={filename}\n"
-            # print(aria_entry)
-            aria_file.write(aria_entry)
-            aria_entries_count += 1
+            if args.skip_owned:
+                if not os.path.isfile(os.path.join(out_dir, filename)):
+                    aria_entry = f"{file_url}\n\tdir={out_dir}\n\tout={filename}\n"
+                    # print(aria_entry)
+                    aria_file.write(aria_entry)
+                    aria_entries_count += 1
+                else:
+                    path: str = os.path.join(out_dir, filename).replace("/", "\\")
+                    log.warn(f"Skipping already owned: {path}")
     log.info(
         f"Succesfully wrote {aria_entries_count} entries to file: {aria_file_name}"
     )
