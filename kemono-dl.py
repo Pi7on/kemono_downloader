@@ -12,8 +12,6 @@ import logging
 import os
 
 # TODO: Searching by tag works: https://kemono.su/api/v1/posts?o=700&tag=high+resolution
-# TODO: We grab some files as .bin, when their extension is actually specified in the file["name"] or attachment["name"]. This causes us to skip, for example, valid psd files because thir url looks like this: ".....bf893f.bin?f=PSD.psd"
-
 
 URL_WEB = "https://kemono.su/"
 URL_API = URL_WEB + "api/v1/"
